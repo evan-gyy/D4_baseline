@@ -1,0 +1,4 @@
+train number of pairs: 23023, #utterances 46046
+defaultdict(<class 'int'>, {0: 4696, 1: 16082, 2: 2172, 3: 67, 4: 5, 5: 1})test number of pairs: 2841, #utterances 5682
+defaultdict(<class 'int'>, {0: 5249, 1: 18061, 2: 2465, 3: 83, 4: 5, 5: 1})val number of pairs: 3433, #utterances 6866
+defaultdict(<class 'int'>, {0: 5848, 1: 20505, 2: 2833, 3: 105, 4: 5, 5: 1})

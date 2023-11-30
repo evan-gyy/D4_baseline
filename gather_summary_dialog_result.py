@@ -4,12 +4,28 @@ import re
 import argparse
 from collections import defaultdict
 from typing import List
+from tqdm import tqdm
+import numpy as np
+from bert_score import score, BERTScorer
+import jieba
+from rouge import Rouge
+from nltk.translate.meteor_score import meteor_score
+from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.nist_score import sentence_nist
+import ipdb
 
 _add_special_token = True
 
 
+def compute_bert_score(prediction, reference):
+    scorer = BERTScorer(model_type="/home/hy/models/bert-base-chinese/", num_layers=8)
+    P, R, F1 = scorer.score(cands=prediction, 
+                            refs=reference,)
+    P, R, F1 = [np.average(s) for s in (P, R, F1)]
+    return P, R, F1
+
+
 def compute_bleu(prediction, reference, n):
-    from nltk.translate.bleu_score import sentence_bleu
 
     temp_bleu = sentence_bleu(
         [reference], prediction, weights=tuple(1 / n for _ in range(n))
@@ -18,7 +34,6 @@ def compute_bleu(prediction, reference, n):
 
 
 def compute_nist(predict, target, n):
-    from nltk.translate.nist_score import sentence_nist
 
     if len(predict) < n or len(target) < n:
         return 0
@@ -26,7 +41,6 @@ def compute_nist(predict, target, n):
 
 
 def cal_entropy(all_sentences: List[List[str]]):
-    import numpy as np
 
     etp_score = [0.0, 0.0, 0.0, 0.0]
     div_score = [0.0, 0.0, 0.0, 0.0]
@@ -45,8 +59,7 @@ def cal_entropy(all_sentences: List[List[str]]):
 
 
 def cut(text: str):
-    import jieba
-
+    
     global _add_special_token
     if _add_special_token:
         _add_special_token = False
@@ -60,8 +73,6 @@ def cut(text: str):
 
 
 def statistical(file: str, remove_prompt=True):
-    from nltk.translate.meteor_score import meteor_score
-    from rouge import Rouge
 
     if remove_prompt:
         print(f"========= {file} | remove prompt =========")
@@ -76,21 +87,28 @@ def statistical(file: str, remove_prompt=True):
     meteor = 0
     cnt_samples = len(labels_and_predictions)
     rouge_1f = rouge_1p = rouge_1r = rouge_2f = rouge_2p = rouge_2r = rouge_lf = rouge_lp = rouge_lr = 0
-
+    all_labels = []
+    all_preds = []
     all_prediction_cut = []
 
-    for prediction, label in labels_and_predictions:
-        print(prediction)
+    for prediction, label in tqdm(labels_and_predictions):
         prediction = re.sub(r"\[.*?]", "", prediction)
         label = re.sub(r"\[.*?]", "", label)
-        print(prediction)
+
+        # Combined & Doc-only
+        prediction = ''.join(prediction.split(" ")).split('<doc_bos>')[-1]
+        label = ''.join(label.split(" ")).split('<doc_bos>')[-1]
+
         if remove_prompt:
             prediction = re.sub("<.*?pat_bos>", "", prediction)
             label = re.sub("<.*?pat_bos>", "", label)
         cut_prediction = cut(prediction)
         cut_label = cut(label)
-        all_prediction_cut.append(cut_prediction)
 
+        all_prediction_cut.append(cut_prediction)
+        all_labels.append(label)
+        all_preds.append(prediction)
+        # ipdb.set_trace()
         for n in range(4):
             bleu_scores[n] += compute_bleu(cut_prediction, cut_label, n + 1)
             nist_scores[n] += compute_nist(cut_prediction, cut_label, n + 1)
@@ -113,6 +131,15 @@ def statistical(file: str, remove_prompt=True):
 
     entropy, dist = cal_entropy(all_prediction_cut)
 
+    bert_score = compute_bert_score(all_preds, all_labels)
+    
+    # bert_score = compute_bert_score([''.join(i.split(" ")) for i in all_preds], 
+    #                                 [''.join(i.split(" ")) for i in all_labels])
+    # print("bert-score (combined)", bert_score)
+    # bert_score = compute_bert_score([''.join(i.split(" ")).split('<doc_bos>')[-1] for i in all_preds], 
+    #                                 [''.join(i.split(" ")).split('<doc_bos>')[-1] for i in all_labels])
+    # print("bert-score (combined, doc only)", bert_score)
+
     bleu_scores = [x / cnt_samples for x in bleu_scores]
     nist_scores = [x / cnt_samples for x in nist_scores]
     meteor = meteor / cnt_samples
@@ -125,15 +152,17 @@ def statistical(file: str, remove_prompt=True):
     rouge_lf = rouge_lf / cnt_samples
     rouge_lp = rouge_lp / cnt_samples
     rouge_lr = rouge_lr / cnt_samples
+    
+    print(f"\n======= {file} | statistical results =======")
     print("bleu", bleu_scores)
-    print("nist", nist_scores)
+    # print("nist", nist_scores)
     print("meteor", meteor)
-    print("rouge-1f,p,r", rouge_1f, rouge_1p, rouge_1r)
-    print("rouge-2f,p,r", rouge_2f, rouge_2p, rouge_2r)
-    print("rouge-lf,p,r", rouge_lf, rouge_lp, rouge_lr)
-    print("entropy", entropy)
+    # print("rouge-1f,p,r", rouge_1f, rouge_1p, rouge_1r)
+    # print("rouge-2f,p,r", rouge_2f, rouge_2p, rouge_2r)
+    print("rouge-l: f,p,r", rouge_lf, rouge_lp, rouge_lr)
+    # print("entropy", entropy)
     print("dist", dist)
-    print()
+    print("bert-score", bert_score)
 
 
 def action_statistical(file: str):
@@ -144,8 +173,6 @@ def action_statistical(file: str):
     _labels = {'共情安慰', '核心', '其它', '行为', '筛查','自杀倾向'}
     labels = ['共情安慰', '兴趣', '其它', '情绪', '睡眠', '社会功能',
                '筛查', '精神状态', '自杀倾向', '躯体症状', '食欲']
-
-    print(f"=========--- {file} | action statistical results ---=========")
 
     with open(file, encoding="utf8") as f:
         samples = json.load(f)
@@ -167,7 +194,7 @@ def action_statistical(file: str):
             print(f"No action found in '{pred}' or '{label}'")
 
     print(f"{acc} / {len(samples)} = {(acc / len(samples)):.3%}")
-    print(classification_report(label_actions, pred_actions, digits=4))
+    # print(classification_report(label_actions, pred_actions, digits=4))
 
 
 def main():

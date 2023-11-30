@@ -1,17 +1,21 @@
 #!/bin/bash
+  # -m torch.distributed.launch --nproc_per_node=$nproc --nnodes=1 --node_rank=0 --master_port "${port}" \
+# main.py \
 
-per_device_train_batch_size=2
-per_device_eval_batch_size=8
+per_device_train_batch_size=64
+per_device_eval_batch_size=64
 gradient_accumulation_steps=4
 
-MODEL_TYPE=bart-base
-MODEL_PATH=""
-train_data=""
-valid_data=""
-test_data=""
-output_dir=""
-port=$RANDOM
+MODEL_TYPE=cpt-base
+MODEL_PATH="/home/hy/models/cpt-base"
+train_data="./data/dialog/6topic/train_test.json"
+valid_data="./data/dialog/6topic/val_test.json"
+test_data="./data/dialog/6topic/test_test.json"
+output_dir="./output/dialog"
+port=49181
 quit=0
+device=1
+nproc=1
 
 while [ "$quit" -ne 1 ]; do
   netstat -a | grep $port >> /dev/null
@@ -22,9 +26,7 @@ while [ "$quit" -ne 1 ]; do
   fi
 done
 
-python \
-  -m torch.distributed.launch --nproc_per_node=4 --nnodes=1 --node_rank=0 --master_port "${port}" \
-main.py \
+CUDA_VISIBLE_DEVICES=$device python main.py \
   --output_dir  ${output_dir} \
   --do_train    true \
   --do_eval     true \
@@ -44,7 +46,7 @@ main.py \
   --load_best_model_at_end      true \
   --seed                        42 \
   --dataloader_num_workers      3 \
-  --disable_tqdm                true \
+  --disable_tqdm                false \
   --label_smoothing_factor      0 \
   --ddp_find_unused_parameters  true \
   --dataloader_pin_memory       false \
