@@ -3,27 +3,30 @@ import json
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+import ipdb
 
 from main import get_model_and_tokenizer
 from utils.data_process import DialogDataset, CollateFnForDialog
 
 
-def generate(model_type: str, ckpt_path: str, dataset: DialogDataset, save_to: str):
+def generate(model_type: str, ckpt_path: str, dataset: DialogDataset, save_to: str, action_prompt):
     print(model_type)
     model, tokenizer = get_model_and_tokenizer("dialog", model_type, ckpt_path, n_class=-1)
-    _collate = CollateFnForDialog(tokenizer, 512, truncation="right", action_prompt=True)
+    _collate = CollateFnForDialog(tokenizer, 512, truncation="right", action_prompt=action_prompt)
     model.cuda().eval()
 
     dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=_collate.collate_fn)
 
     result = []
 
-    for i, inputs in enumerate(dataloader):
+    for i, inputs in tqdm(enumerate(dataloader), total=len([0 for _ in dataloader])):
         for k, v in inputs.items():
             if torch.is_tensor(v):
                 inputs[k] = v.cuda()
         labels = inputs.pop("labels")
         outputs = model.generate(**inputs, num_beams=8, max_length=128)
+        # ipdb.set_trace()
         pair = [
             tokenizer.batch_decode(outputs)[0].replace("[SEP]", "").replace("[CLS] ", "").strip(),
             tokenizer.batch_decode(labels)[0].replace("[SEP]", "").replace("[CLS] ", "").strip(),
@@ -43,11 +46,12 @@ def main():
     parser.add_argument("--ckpt_path", type=str, required=True)
     parser.add_argument("--save_to", type=str, required=True)
     parser.add_argument("--test_data", type=str, required=True)
+    parser.add_argument("--action_prompt", action="store_true", default=False)
     args = parser.parse_args()
 
     dataset = DialogDataset(args.test_data)
 
-    generate(args.model_type, args.ckpt_path, dataset, args.save_to)
+    generate(args.model_type, args.ckpt_path, dataset, args.save_to, args.action_prompt)
 
 
 if __name__ == '__main__':

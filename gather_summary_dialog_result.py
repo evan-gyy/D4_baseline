@@ -2,10 +2,12 @@ import glob
 import json
 import re
 import argparse
+from pathlib import Path
 from collections import defaultdict
 from typing import List
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
 from bert_score import score, BERTScorer
 import jieba
 from rouge import Rouge
@@ -72,7 +74,26 @@ def cut(text: str):
         .split("#")
 
 
-def statistical(file: str, remove_prompt=True):
+def convert_result(data):
+    formatted_data = []
+    with open('/home/hy/gyy/psy/Baichuan2/fine-tune/data/w_cot_action/psy_w_cot_test.json', encoding="utf8") as f:
+        labels = [l['conversations'][-1]['action'] for l in json.load(f)]
+    for i, d in enumerate(data['result']):
+        if '<next>' in d['generated_text']:
+            act = "<act> " + " ".join([_ for _ in re.search(r'<next>(.*?)<', d['generated_text']).group(1)]) + " "
+            act_ref = "<act> " + " ".join([_ for _ in labels[i]]) + " "
+        else:
+            act = act_ref = ""
+        formatted_data.append([
+            act + "<doc_bos> " + " ".join([_ for _ in d['prediction']]),
+            act_ref + "<doc_bos> " + " ".join([_ for _ in d['reference']]),
+        ])
+    print(formatted_data[0])
+    print(formatted_data[-1])
+    return formatted_data
+
+
+def statistical(file: str, remove_prompt=True, convert=False, add_token=False):
 
     if remove_prompt:
         print(f"========= {file} | remove prompt =========")
@@ -81,6 +102,8 @@ def statistical(file: str, remove_prompt=True):
 
     with open(file, encoding="utf8") as f:
         labels_and_predictions = json.load(f)
+        if convert:
+            labels_and_predictions = convert_result(labels_and_predictions)
 
     bleu_scores = [0, 0, 0, 0]
     nist_scores = [0, 0, 0, 0]
@@ -96,8 +119,9 @@ def statistical(file: str, remove_prompt=True):
         label = re.sub(r"\[.*?]", "", label)
 
         # Combined & Doc-only
-        prediction = ''.join(prediction.split(" ")).split('<doc_bos>')[-1]
-        label = ''.join(label.split(" ")).split('<doc_bos>')[-1]
+        if not add_token:
+            prediction = ''.join(prediction.split(" ")).split('<doc_bos>')[-1]
+            label = ''.join(label.split(" ")).split('<doc_bos>')[-1]
 
         if remove_prompt:
             prediction = re.sub("<.*?pat_bos>", "", prediction)
@@ -131,7 +155,8 @@ def statistical(file: str, remove_prompt=True):
 
     entropy, dist = cal_entropy(all_prediction_cut)
 
-    bert_score = compute_bert_score(all_preds, all_labels)
+    bert_score = compute_bert_score(all_preds, all_labels)[-1]
+    bert_score = round(bert_score, 4)
     
     # bert_score = compute_bert_score([''.join(i.split(" ")) for i in all_preds], 
     #                                 [''.join(i.split(" ")) for i in all_labels])
@@ -140,18 +165,20 @@ def statistical(file: str, remove_prompt=True):
     #                                 [''.join(i.split(" ")).split('<doc_bos>')[-1] for i in all_labels])
     # print("bert-score (combined, doc only)", bert_score)
 
-    bleu_scores = [x / cnt_samples for x in bleu_scores]
+    bleu_scores = round([x / cnt_samples for x in bleu_scores][1], 4)
     nist_scores = [x / cnt_samples for x in nist_scores]
-    meteor = meteor / cnt_samples
+    meteor = round(meteor / cnt_samples, 4)
     rouge_1f = rouge_1f / cnt_samples
     rouge_1p = rouge_1p / cnt_samples
     rouge_1r = rouge_1r / cnt_samples
     rouge_2f = rouge_2f / cnt_samples
     rouge_2p = rouge_2p / cnt_samples
     rouge_2r = rouge_2r / cnt_samples
-    rouge_lf = rouge_lf / cnt_samples
+    rouge_lf = round(rouge_lf / cnt_samples, 4)
     rouge_lp = rouge_lp / cnt_samples
     rouge_lr = rouge_lr / cnt_samples
+
+    dist_score = round(dist[1], 4)
     
     print(f"\n======= {file} | statistical results =======")
     print("bleu", bleu_scores)
@@ -159,13 +186,24 @@ def statistical(file: str, remove_prompt=True):
     print("meteor", meteor)
     # print("rouge-1f,p,r", rouge_1f, rouge_1p, rouge_1r)
     # print("rouge-2f,p,r", rouge_2f, rouge_2p, rouge_2r)
-    print("rouge-l: f,p,r", rouge_lf, rouge_lp, rouge_lr)
+    print("rouge-l", rouge_lf)
     # print("entropy", entropy)
-    print("dist", dist)
+    print("dist", dist_score)
     print("bert-score", bert_score)
 
+    metric = {
+        'model': Path(file).stem,
+        'add_token': add_token,
+        'BLEU-2': bleu_scores,
+        'ROUGE-L': rouge_lf,
+        'METEOR': meteor,
+        'DIST-2': dist_score,
+        'BERT-SCORE': bert_score
+    }
+    return metric
 
-def action_statistical(file: str):
+
+def action_statistical(file: str, convert: bool):
     from sklearn.metrics import classification_report
 
     # _labels = {'共情安慰', '兴趣', '其它', '情绪', '睡眠', '社会功能',
@@ -176,6 +214,8 @@ def action_statistical(file: str):
 
     with open(file, encoding="utf8") as f:
         samples = json.load(f)
+        if convert:
+            samples = convert_result(samples)
 
     acc = 0
     pred_actions = []
@@ -202,11 +242,19 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-s', '--src_dir', type=str, required=True,
                         help='file directory to preprocess')
+    parser.add_argument('-c', '--convert', action="store_true", default=False)
     args = parser.parse_args()
-    
-    for file in sorted(glob.glob(f"{args.src_dir}/*/result.json")):
-        statistical(file, remove_prompt=True)
-        action_statistical(file)
+
+    all_results = []
+
+    for t in [True, False]:
+        for file in sorted(glob.glob(f"{args.src_dir}/*.json")):
+            metric = statistical(file, remove_prompt=True, convert=args.convert, add_token=t)
+            action_statistical(file, convert=args.convert)
+            all_results.append(metric)
+        
+    df = pd.DataFrame(all_results)
+    df.to_csv(f"{args.src_dir}/all_results.csv", index=False)
 
 
 if __name__ == '__main__':

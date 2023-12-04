@@ -1,0 +1,5 @@
+model,add_token,BLEU-2,ROUGE-L,METEOR,DIST-2,BERT-SCORE
+cpt-base_test_result,True,0.3495,0.5164,0.469,0.0425,0.8237
+cpt-large_test_result,True,0.3848,0.5495,0.5071,0.099,0.8364
+cpt-base_test_result,False,0.1954,0.3613,0.2921,0.0543,0.7014
+cpt-large_test_result,False,0.2421,0.407,0.3435,0.1265,0.7252

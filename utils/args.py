@@ -20,6 +20,8 @@ class ModelConstructArgs(_Args):
                                                             "cpt-base", "cpt-large", "bert-base", "bert-large"],
                                                 "help": "Pretrained model path"})
     init_model: Optional[int] = field(default=0, metadata={"choices": [0, 1], "help": "Init models' parameters"})
+    settings: Optional[str] = field(default=None, metadata={"help": "Settings"})
+    result_dir: Optional[str] = field(default=None, metadata={"help": "Result dir"})
 
 
 @dataclass

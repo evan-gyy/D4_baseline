@@ -149,6 +149,8 @@ def main(_args: List[str] = None):
                 result = [group for group in zip(test_preds, labels)]
                 with open(join(train_args.output_dir, "result.json"), "w", encoding='utf8') as f:
                     json.dump(result, f, ensure_ascii=False, indent=1)
+                with open(join(model_args.result_dir, f"{model_args.model_type}_{model_args.settings}_result.json"), "w", encoding='utf8') as f:
+                    json.dump(result, f, ensure_ascii=False, indent=1)
             else:
                 logger.warning("Length of test_preds != labels")
                 with open(join(train_args.output_dir, "preds.json"), "w", encoding='utf8') as f:

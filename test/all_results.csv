@@ -1,0 +1,9 @@
+model,add_token,BLEU-2,ROUGE-L,METEOR,DIST-2,BERT-SCORE
+cpt-base_gen_act,True,0.2662,0.4578,0.3846,0.0384,0.7988
+cpt-base_gold,True,0.3495,0.5164,0.469,0.0425,0.8237
+cpt-large_gen_act,True,0.2998,0.487,0.4183,0.0868,0.8101
+cpt-large_gold,True,0.3848,0.5495,0.5071,0.099,0.8364
+cpt-base_gen_act,False,0.1748,0.3348,0.2666,0.0494,0.6855
+cpt-base_gold,False,0.1954,0.3613,0.2921,0.0543,0.7014
+cpt-large_gen_act,False,0.2122,0.3698,0.3055,0.1121,0.7039
+cpt-large_gold,False,0.2421,0.407,0.3435,0.1265,0.7252

@@ -2,16 +2,19 @@
   # -m torch.distributed.launch --nproc_per_node=$nproc --nnodes=1 --node_rank=0 --master_port "${port}" \
 # main.py \
 
-per_device_train_batch_size=64
-per_device_eval_batch_size=64
+per_device_train_batch_size=24
+per_device_eval_batch_size=16
 gradient_accumulation_steps=4
 
-MODEL_TYPE=cpt-base
-MODEL_PATH="/home/hy/models/cpt-base"
+settings="baseline"
+MODEL_TYPE=cpt-large
+MODEL_PATH="/home/hy/models/cpt-large"
 train_data="./data/dialog/6topic/train_test.json"
 valid_data="./data/dialog/6topic/val_test.json"
 test_data="./data/dialog/6topic/test_test.json"
-output_dir="./output/dialog"
+output_dir="./output/${MODEL_TYPE}_${settings}"
+result_dir="./result/"
+
 port=49181
 quit=0
 device=1
@@ -31,7 +34,7 @@ CUDA_VISIBLE_DEVICES=$device python main.py \
   --do_train    true \
   --do_eval     true \
   --do_predict  true \
-  --evaluation_strategy     epoch \
+  --evaluation_strategy     steps \
   --per_device_train_batch_size ${per_device_train_batch_size} \
   --per_device_eval_batch_size  ${per_device_eval_batch_size} \
   --gradient_accumulation_steps ${gradient_accumulation_steps} \
@@ -41,7 +44,8 @@ CUDA_VISIBLE_DEVICES=$device python main.py \
   --lr_scheduler_type           cosine \
   --warmup_steps                100 \
   --logging_steps               40 \
-  --save_strategy               epoch \
+  --save_steps                  500 \
+  --eval_steps                  500 \
   --save_total_limit            1 \
   --load_best_model_at_end      true \
   --seed                        42 \
@@ -60,6 +64,8 @@ CUDA_VISIBLE_DEVICES=$device python main.py \
   \
   --model_type    "${MODEL_TYPE}" \
   --model_path    "${MODEL_PATH}" \
+  --settings      "${settings}"   \
+  --result_dir    "${result_dir}" \
   \
   --max_len       512 \
   --add_portrait  true \
