@@ -58,7 +58,7 @@ def main():
                         help='file directory to preprocess')
     parser.add_argument('-t', '--tgt_dir', type=str, required=True,
                         help='target directory')
-    parser.add_argument('-a', '--add_topic', type=Boolean, required=True,
+    parser.add_argument('-a', '--add_topic', type=Boolean, default=False,
                         help='whether or not add topic')
     parser.add_argument('-n', '--topic_num', type=int, default=11, help='topic number', choices= [2, 6, 11])
     args = parser.parse_args()

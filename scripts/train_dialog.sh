@@ -6,7 +6,7 @@ per_device_train_batch_size=24
 per_device_eval_batch_size=16
 gradient_accumulation_steps=4
 
-settings="baseline"
+settings="wo_act"
 MODEL_TYPE=cpt-large
 MODEL_PATH="/home/hy/models/cpt-large"
 train_data="./data/dialog/6topic/train_test.json"
@@ -72,4 +72,4 @@ CUDA_VISIBLE_DEVICES=$device python main.py \
   --task          dialog \
   --train_text    ${train_data} \
   --dev_text      ${valid_data} \
-  --test_text     ${valid_data}
+  --test_text     ${test_data}

@@ -28,7 +28,7 @@ def compute_bert_score(prediction, reference):
 
 
 def compute_bleu(prediction, reference, n):
-
+    # ipdb.set_trace()
     temp_bleu = sentence_bleu(
         [reference], prediction, weights=tuple(1 / n for _ in range(n))
     )
@@ -65,7 +65,8 @@ def cut(text: str):
     global _add_special_token
     if _add_special_token:
         _add_special_token = False
-        for special_token in ['<doc_bos>', '<pat_bos>', '<act>']:
+        for special_token in ['<doc_bos>', '<pat_bos>', '<doctor>', '<patient>', '<act>', 
+                              '<turn>', '<stage>', '<info>', '<summary>', '<next>']:
             jieba.add_word(special_token, freq=1000000000000000)
 
     return "#".join(jieba.cut(text.replace(" ", ""))) \
@@ -74,26 +75,45 @@ def cut(text: str):
         .split("#")
 
 
-def convert_result(data):
+def convert_result(data, summary=False):
     formatted_data = []
-    with open('/home/hy/gyy/psy/Baichuan2/fine-tune/data/w_cot_action/psy_w_cot_test.json', encoding="utf8") as f:
-        labels = [l['conversations'][-1]['action'] for l in json.load(f)]
+    w_cot_file = '/home/hy/gyy/psy/Baichuan2/fine-tune/data/w_cot_action/psy_w_cot_test.json'
+    wo_cot_file = '/home/hy/gyy/psy/Baichuan2/fine-tune/data/psy_wo_cot_test.json'
+    if not summary:
+        with open(w_cot_file, encoding="utf8") as f:
+            tmp_file = json.load(f)
+            labels = [l['conversations'][-1]['action'] for l in tmp_file]
+            w_cot_targets = [l['conversations'][-1]['value'].replace('</s>\n', '') for l in tmp_file]
+        with open(wo_cot_file, encoding="utf8") as f:
+            tmp_file = json.load(f)
+            wo_cot_targets = [l['conversations'][-1]['value'] for l in tmp_file]
     for i, d in enumerate(data['result']):
-        if '<next>' in d['generated_text']:
-            act = "<act> " + " ".join([_ for _ in re.search(r'<next>(.*?)<', d['generated_text']).group(1)]) + " "
-            act_ref = "<act> " + " ".join([_ for _ in labels[i]]) + " "
+        if summary:
+            formatted_data.append([
+                "<summary> " + " ".join([_ for _ in d['prediction']]),
+                "<summary> " + " ".join([_ for _ in d['reference']]),
+            ])
         else:
-            act = act_ref = ""
-        formatted_data.append([
-            act + "<doc_bos> " + " ".join([_ for _ in d['prediction']]),
-            act_ref + "<doc_bos> " + " ".join([_ for _ in d['reference']]),
-        ])
+            if '<next>' in d['generated_text']:
+                act = "<next> " + " ".join([_ for _ in re.search(r'<next>(.*?)<', d['generated_text']).group(1)]) + " "
+                act_ref = "<next> " + " ".join([_ for _ in labels[i]]) + " "
+            elif '下一轮对话的话题' in d['generated_text']:
+                act = "<next> " + " ".join([_ for _ in re.search(r'下一轮对话的话题：(.*?)\n', d['generated_text']).group(1)]) + " "
+                act_ref = "<next> " + " ".join([_ for _ in labels[i]]) + " "
+            elif '<next>' in d['prompt'] or '下一轮对话的话题' in d['prompt']:
+                act = act_ref = "<next> " + " ".join([_ for _ in labels[i]]) + " "
+            else:
+                act_ref = act = '<next> '
+            formatted_data.append([
+                act + "<doctor> " + " ".join([_ for _ in d['prediction']]),
+                act_ref + "<doctor> " + " ".join([_ for _ in d['reference']]),
+            ])
     print(formatted_data[0])
     print(formatted_data[-1])
     return formatted_data
 
 
-def statistical(file: str, remove_prompt=True, convert=False, add_token=False):
+def statistical(file: str, remove_prompt=True, convert=False, summary=False, add_token=True):
 
     if remove_prompt:
         print(f"========= {file} | remove prompt =========")
@@ -103,7 +123,7 @@ def statistical(file: str, remove_prompt=True, convert=False, add_token=False):
     with open(file, encoding="utf8") as f:
         labels_and_predictions = json.load(f)
         if convert:
-            labels_and_predictions = convert_result(labels_and_predictions)
+            labels_and_predictions = convert_result(labels_and_predictions, summary=summary)
 
     bleu_scores = [0, 0, 0, 0]
     nist_scores = [0, 0, 0, 0]
@@ -126,6 +146,7 @@ def statistical(file: str, remove_prompt=True, convert=False, add_token=False):
         if remove_prompt:
             prediction = re.sub("<.*?pat_bos>", "", prediction)
             label = re.sub("<.*?pat_bos>", "", label)
+
         cut_prediction = cut(prediction)
         cut_label = cut(label)
 
@@ -155,8 +176,11 @@ def statistical(file: str, remove_prompt=True, convert=False, add_token=False):
 
     entropy, dist = cal_entropy(all_prediction_cut)
 
-    bert_score = compute_bert_score(all_preds, all_labels)[-1]
-    bert_score = round(bert_score, 4)
+    # try:
+    #     bert_score = compute_bert_score(all_preds, all_labels)[-1]
+    #     bert_score = round(bert_score, 4)
+    # except:
+    bert_score = 0
     
     # bert_score = compute_bert_score([''.join(i.split(" ")) for i in all_preds], 
     #                                 [''.join(i.split(" ")) for i in all_labels])
@@ -193,12 +217,12 @@ def statistical(file: str, remove_prompt=True, convert=False, add_token=False):
 
     metric = {
         'model': Path(file).stem,
-        'add_token': add_token,
+        # 'add_token': add_token,
         'BLEU-2': bleu_scores,
         'ROUGE-L': rouge_lf,
         'METEOR': meteor,
         'DIST-2': dist_score,
-        'BERT-SCORE': bert_score
+        # 'BERT-SCORE': bert_score
     }
     return metric
 
@@ -223,8 +247,9 @@ def action_statistical(file: str, convert: bool):
 
     for pred, label in samples:
         try:
-            pred_action = ''.join(re.search("<act>(.*?)<", pred).group(1).split())
-            label_action = ''.join(re.search("<act>(.*?)<", label).group(1).split())
+            ptr = "<act>(.*?)<" if '<act>' in label else "<next>(.*?)<"
+            pred_action = ''.join(re.search(ptr, pred).group(1).split())
+            label_action = ''.join(re.search(ptr, label).group(1).split())
             if label_action not in _labels or pred_action not in _labels:
                 continue    
             acc += (pred_action == label_action)
@@ -243,16 +268,20 @@ def main():
     parser.add_argument('-s', '--src_dir', type=str, required=True,
                         help='file directory to preprocess')
     parser.add_argument('-c', '--convert', action="store_true", default=False)
+    parser.add_argument('-sum', '--summary', action="store_true", default=False)
     args = parser.parse_args()
 
     all_results = []
 
-    for t in [True, False]:
-        for file in sorted(glob.glob(f"{args.src_dir}/*.json")):
-            metric = statistical(file, remove_prompt=True, convert=args.convert, add_token=t)
-            action_statistical(file, convert=args.convert)
-            all_results.append(metric)
-        
+    # for t in [True, False]:
+    for file in sorted(glob.glob(f"{args.src_dir}/*.json")):
+        metric = statistical(file, remove_prompt=True, convert=args.convert, 
+                             add_token=True,
+                             summary=args.summary)
+        action_statistical(file, convert=args.convert)
+        all_results.append(metric)
+    
+    print(all_results)
     df = pd.DataFrame(all_results)
     df.to_csv(f"{args.src_dir}/all_results.csv", index=False)
 
